@@ -9,10 +9,10 @@ import Grammar
 
 type Parser = Parsec String ()
 
-parseLine :: Parser Line
-parseLine = (Left <$> aInstruction)
-         <|> (Right <$> cInstruction)
-         <* maybeCommentOrWhitespace
+parseLine :: Parser (Maybe Line)
+parseLine = (Just . Left <$> aInstruction)
+         <|> (Just . Right <$> cInstruction)
+         <|> (maybeCommentOrWhitespace *> pure Nothing)
 
 maybeCommentOrWhitespace :: Parser ()
 maybeCommentOrWhitespace = undefined
