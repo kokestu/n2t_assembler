@@ -5,14 +5,23 @@ import Text.Parsec.Char
   ( char
   , newline
   , spaces
-  , anyChar
+  , noneOf
   , string
   , letter
   , digit
   , oneOf
   )
-import Data.Maybe (catMaybes)
+import Data.Maybe
+  ( catMaybes
+  , isJust
+  )
 import Data.Map
+  ( empty
+  , lookup
+  , Map
+  , insertWith
+  )
+import Data.List (nub)
 
 import Grammar
 
@@ -22,7 +31,7 @@ type SymbolTable = Map String (Maybe Int)
 
 parseProgram :: Parser ([Line], SymbolTable)
 parseProgram = do
-  lines <- many parseLine
+  lines <- many (spaces >> parseLine)
   st <- getState
   return (catMaybes lines, st)
 
@@ -48,8 +57,23 @@ symbol = VR <$> (try parseVR)
 parseSymbolAndUpdateTable :: Maybe Int -> Parser String
 parseSymbolAndUpdateTable x = do
   symbol <- parseIdentifier
-  updateState $ insertWith (flip const) symbol x 
+  if isJust x then checkIfExists symbol else return ()
+  updateState $ insertWith update symbol x 
   return symbol
+  where
+    checkIfExists :: String -> Parser ()
+    checkIfExists k = do
+      symbols <- getState
+      let val = Data.Map.lookup k symbols
+      case val of
+        Nothing -> return ()
+        Just (Nothing) -> return ()
+        Just _ -> fail "Label already exists in symbol table."
+
+    update :: Maybe Int -> Maybe Int -> Maybe Int
+    update (Just new) Nothing = Just new
+    update Nothing old = old
+    update _ _ = error "Should never happen"
 
 parseVR :: Parser VirtualRegister
 parseVR = char 'R' >> R <$> (read <$> many1 digit)
@@ -76,21 +100,69 @@ parseIdentifier = do
     maybeDigitCharList = many (nonDigitChar <|> digit)
 
 cInstruction :: Parser CInstruction
-cInstruction = string "this should never work!!1!"
-    >> (return $ CAss (Ass (Single D) (C Zero)))
+cInstruction = (CAss <$> parseCAss)
+              -- <|> JAss <$> parseJAss
+              -- <|> parseJExpr)
+              <* maybeCommentOrWhitespace
+
+parseCAss :: Parser Assignment
+parseCAss = do
+  destination <- parseDest
+  char '='
+  expression <- parseExpr
+  return (Ass destination expression)
+
+parseDest :: Parser DestReg
+parseDest = (do
+  regs <- (try (count 3 parseReg)
+          <|> try (count 2 parseReg)
+          <|> pure <$> parseReg)
+  if length (nub regs) /= length regs
+  then fail "Duplicate destinations"
+  else case regs of
+    [x] -> return $ Single x
+    [x,y] -> return $ Double x y
+    [x,y,z] -> return $ Triple x y z
+    _ -> error "PANIC: parsed too much"
+  ) <|> (string "null" >> return RNull)
+
+parseReg :: Parser Reg
+parseReg = (char 'D' >> pure D)
+         <|> (char 'M' >> pure M)
+         <|> (char 'A' >> pure A)
+
+parseExpr :: Parser Expr
+parseExpr = try (opExpr '+' Add)
+         <|> try (opExpr '-' Minus)
+         <|> try (opExpr '&' And)
+         <|> try (opExpr '|' Or)
+         <|> (char '!' >> Not <$> constExpr)
+         <|> C <$> constExpr
+
+constExpr :: Parser ConstExpr
+constExpr = char '0' *> pure Zero
+          <|> char '1' *> pure One
+          <|> Register <$> parseReg
+
+opExpr :: Char -> (ConstExpr -> ConstExpr -> Expr) -> Parser Expr
+opExpr op cons = do
+  expr1 <- constExpr
+  char op
+  expr2 <- constExpr
+  return $ cons expr1 expr2
 
 lInstruction :: Parser LInstruction
 lInstruction = Label <$> do
-  line <- Just <$> sourceLine <$> getPosition
+  line <- sourceLine <$> getPosition
   label <- between
     (char '(')
     (char ')')
-    (parseSymbolAndUpdateTable line)
+    (parseSymbolAndUpdateTable $ Just line)
   maybeCommentOrWhitespace
   return label
 
 comment :: Parser ()
-comment = string "//" >> skipMany anyChar
+comment = string "//" >> skipMany (noneOf "\n")
 
 maybeCommentOrWhitespace :: Parser ()
 maybeCommentOrWhitespace = spaces *> optional comment

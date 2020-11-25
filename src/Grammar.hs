@@ -32,7 +32,7 @@ data AInstruction = AtInt Int
                   | AtSymbol Symbol
                   deriving (Show)
 
-data Reg = D | A | M deriving (Show)
+data Reg = D | A | M deriving (Show, Eq)
 
 data DestReg = Single Reg
              | Double Reg Reg
