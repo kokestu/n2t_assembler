@@ -32,7 +32,8 @@ parseProgram = do
 parseLine :: Parser (Maybe Line)
 parseLine = (Just . AIn <$> aInstruction <* incInstructionCount)
          <|> (Just . CIn <$> cInstruction <* incInstructionCount)
-         <|> (Just . LIn <$> lInstruction)
+             -- only needed to update symbol table
+         <|> (lInstruction *> pure Nothing)  
          <|> (maybeCommentOrWhitespace *> pure Nothing)
          <* newline
 
@@ -148,8 +149,8 @@ opExpr op cons = do
   expr2 <- constExpr
   return $ cons expr1 expr2
 
-lInstruction :: Parser LInstruction
-lInstruction = Label <$> do
+lInstruction :: Parser ()
+lInstruction = do
   line <- sourceLine <$> getPosition
   label <- between
     (char '(')
@@ -160,7 +161,6 @@ lInstruction = Label <$> do
       updateTable label count
       return label)
   maybeCommentOrWhitespace
-  return label
 
 comment :: Parser ()
 comment = string "//" >> skipMany (noneOf "\n")

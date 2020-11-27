@@ -2,8 +2,7 @@ module Grammar where
 
 type Program = [Line]
 
-data Line = LIn LInstruction
-          | AIn AInstruction 
+data Line = AIn AInstruction 
           | CIn CInstruction
           deriving (Show)
 
@@ -25,8 +24,6 @@ data Symbol = VR VirtualRegister
             | IP IOPointer
             | UDefSymbol String
             deriving (Show)
-
-data LInstruction = Label String deriving (Show)
 
 data AInstruction = AtInt Int
                   | AtSymbol Symbol
