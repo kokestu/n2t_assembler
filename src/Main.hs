@@ -15,7 +15,9 @@ main = do
   case maybeParsed of
     Left err -> print err
     Right (parsed, state) -> do
-      let bin = assemble parsed state
-      writeFile target bin
-      putStrLn "Done."
+      case assemble parsed state of
+        Left err -> print err
+        Right bin -> do
+          writeFile target bin
+          putStrLn "Done."
 
