@@ -1,4 +1,4 @@
-module Parser where
+module Parser (parseAndGetState) where
 
 import Text.Parsec hiding (Line)
 import Text.Parsec.Char
@@ -15,29 +15,23 @@ import Data.Maybe
   ( catMaybes
   , isJust
   )
-import Data.Map
-  ( empty
-  , lookup
-  , Map
-  , insertWith
-  )
 import Data.List (nub)
+import Parser.Types
 
 import Grammar
 
--- Use a Map for the symbol table
-type Parser = Parsec String (Map String (Maybe Int))
-type SymbolTable = Map String (Maybe Int)
+parseAndGetState :: String -> String -> Either ParseError ([Line], ParserState)
+parseAndGetState = runParser parseProgram emptyState
 
-parseProgram :: Parser ([Line], SymbolTable)
+parseProgram :: Parser ([Line], ParserState)
 parseProgram = do
   lines <- many (spaces >> parseLine)
   st <- getState
   return (catMaybes lines, st)
 
 parseLine :: Parser (Maybe Line)
-parseLine = (Just . AIn <$> aInstruction)
-         <|> (Just . CIn <$> cInstruction)
+parseLine = (Just . AIn <$> aInstruction <* incInstructionCount)
+         <|> (Just . CIn <$> cInstruction <* incInstructionCount)
          <|> (Just . LIn <$> lInstruction)
          <|> (maybeCommentOrWhitespace *> pure Nothing)
          <* newline
@@ -52,28 +46,7 @@ symbol :: Parser Symbol
 symbol = VR <$> (try parseVR)
         <|> PP <$> (try parsePP)
         <|> IP <$> (try parseIP)  
-        <|> UDefSymbol <$> (try $ parseSymbolAndUpdateTable Nothing)
-
-parseSymbolAndUpdateTable :: Maybe Int -> Parser String
-parseSymbolAndUpdateTable x = do
-  symbol <- parseIdentifier
-  if isJust x then checkIfExists symbol else return ()
-  updateState $ insertWith update symbol x 
-  return symbol
-  where
-    checkIfExists :: String -> Parser ()
-    checkIfExists k = do
-      symbols <- getState
-      let val = Data.Map.lookup k symbols
-      case val of
-        Nothing -> return ()
-        Just (Nothing) -> return ()
-        Just _ -> fail "Label already exists in symbol table."
-
-    update :: Maybe Int -> Maybe Int -> Maybe Int
-    update (Just new) Nothing = Just new
-    update Nothing old = old
-    update _ _ = error "Should never happen"
+        <|> UDefSymbol <$> (try $ parseIdentifier)
 
 parseVR :: Parser VirtualRegister
 parseVR = char 'R' >> R <$> (read <$> many1 digit)
@@ -100,13 +73,37 @@ parseIdentifier = do
     maybeDigitCharList = many (nonDigitChar <|> digit)
 
 cInstruction :: Parser CInstruction
-cInstruction = (CAss <$> parseCAss)
-              -- <|> JAss <$> parseJAss
-              -- <|> parseJExpr)
+cInstruction = try (CAss <$> parseAss)
+              <|> try parseJAss
+              <|> parseJExpr
               <* maybeCommentOrWhitespace
 
-parseCAss :: Parser Assignment
-parseCAss = do
+parseJAss :: Parser CInstruction
+parseJAss = do
+  assignment <- parseAss
+  char ';'
+  jump <- parseJump
+  return (JAss assignment jump)
+
+parseJump :: Parser Jump
+parseJump = try (string "JMP" *> pure JMP)
+            <|> try (string "JEQ" *> pure JEQ)
+            <|> try (string "JNE" *> pure JNE)
+            <|> try (string "JLT" *> pure JLT)
+            <|> try (string "JLE" *> pure JLE)
+            <|> try (string "JGT" *> pure JGT)
+            <|> try (string "JGE" *> pure JGE)
+            <|> try (string "null" *> pure JNull)
+
+parseJExpr :: Parser CInstruction
+parseJExpr = do
+  expression <- parseExpr
+  char ';'
+  jump <- parseJump
+  return (JExpr expression jump)
+
+parseAss :: Parser Assignment
+parseAss = do
   destination <- parseDest
   char '='
   expression <- parseExpr
@@ -157,7 +154,11 @@ lInstruction = Label <$> do
   label <- between
     (char '(')
     (char ')')
-    (parseSymbolAndUpdateTable $ Just line)
+    (do
+      label <- parseIdentifier
+      count <- getInstructionCount 
+      updateTable label count
+      return label)
   maybeCommentOrWhitespace
   return label
 
