@@ -130,16 +130,17 @@ parseReg = (char 'D' >> pure D)
          <|> (char 'A' >> pure A)
 
 parseExpr :: Parser Expr
-parseExpr = try (opExpr '+' Add)
+parseExpr = char '0' *> pure Zero
+         <|> try (opExpr '+' Add)
          <|> try (opExpr '-' Minus)
          <|> try (opExpr '&' And)
          <|> try (opExpr '|' Or)
          <|> (char '!' >> Not <$> constExpr)
+         <|> (char '-' >> Negate <$> constExpr)
          <|> C <$> constExpr
 
 constExpr :: Parser ConstExpr
-constExpr = char '0' *> pure Zero
-          <|> char '1' *> pure One
+constExpr = char '1' *> pure One
           <|> Register <$> parseReg
 
 opExpr :: Char -> (ConstExpr -> ConstExpr -> Expr) -> Parser Expr

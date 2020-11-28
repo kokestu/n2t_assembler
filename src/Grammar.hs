@@ -37,17 +37,18 @@ data DestReg = Single Reg
              | RNull
              deriving (Show)
 
-data ConstExpr = Zero
-               | One
+data ConstExpr = One
                | Register Reg
-               deriving (Show)
+               deriving (Show, Eq)
  
-data Expr = C ConstExpr
+data Expr = Zero
+          | C ConstExpr
           | Add ConstExpr ConstExpr
           | Minus ConstExpr ConstExpr
           | And ConstExpr ConstExpr
           | Or ConstExpr ConstExpr
           | Not ConstExpr
+          | Negate ConstExpr
           deriving (Show)
 
 
