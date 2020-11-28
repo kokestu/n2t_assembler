@@ -25,17 +25,16 @@ parseAndGetState = runParser parseProgram emptyState
 
 parseProgram :: Parser ([Line], ParserState)
 parseProgram = do
-  lines <- many (spaces >> parseLine)
+  lines <- many1 (whitespace *> parseLine) <* eof
   st <- getState
   return (catMaybes lines, st)
 
 parseLine :: Parser (Maybe Line)
-parseLine = (Just . AIn <$> aInstruction <* incInstructionCount)
-         <|> (Just . CIn <$> cInstruction <* incInstructionCount)
+parseLine = try (maybeCommentAndNewline *> pure Nothing)
+         <|> Just . AIn <$> aInstruction <* incInstructionCount
+         <|> Just . CIn <$> cInstruction <* incInstructionCount
              -- only needed to update symbol table
-         <|> (lInstruction *> pure Nothing)  
-         <|> (maybeCommentOrWhitespace *> pure Nothing)
-         <* newline
+         <|> lInstruction *> pure Nothing
 
 aInstruction :: Parser AInstruction
 aInstruction = char '@' >> (parseInt <|> parseSymbol)  <* maybeCommentOrWhitespace
@@ -56,7 +55,7 @@ parsePP :: Parser PredefinedPointer
 parsePP = (string "SP" *> pure SP)
           <|> (string "LCL" *> pure LCL)
           <|> (string "ARG" *> pure ARG)
-          <|> (string "THIS" *> pure THIS)
+          <|> try (string "THIS" *> pure THIS)
           <|> (string "THAT" *> pure THAT)
           
 
@@ -164,7 +163,13 @@ lInstruction = do
   maybeCommentOrWhitespace
 
 comment :: Parser ()
-comment = string "//" >> skipMany (noneOf "\n")
+comment = string "//" >> skipMany (noneOf "\n\r")
 
 maybeCommentOrWhitespace :: Parser ()
-maybeCommentOrWhitespace = spaces *> optional comment
+maybeCommentOrWhitespace = whitespace *> maybeCommentAndNewline
+
+maybeCommentAndNewline :: Parser ()
+maybeCommentAndNewline = optional comment *> endOfLine *> pure ()
+
+whitespace :: Parser ()
+whitespace = many (oneOf " \t") *> pure ()
